@@ -1,0 +1,1224 @@
+---
+title: "Predicting Probabilites and Classification of KOIs on the NASA Exoplanet Dataset"
+author: "Filippo Forcella, Angelo Guarino"
+date: "`r Sys.Date()`"
+font: 12pt
+output: 
+    pdf_document :
+      latex_engine : xelatex
+    #toc: true
+    # number_sections: true
+  #html_document:
+    #toc: true
+    # number_sections: true
+ # word_document:
+    #toc: true
+    # number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+knit_hooks$set(small = function(before, options, envir) {
+  if (before) {
+    return('<div style="font-size:10px;">')  # Set the desired font size here
+  } else {
+    return('</div>')
+  }
+})
+```
+
+```{r install_tinytex, eval=FALSE, include=FALSE}
+tinytex::install_tinytex()
+```
+
+```{r, include=FALSE}
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\n \\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+```
+
+## NASA Exoplanet Dataset
+
+For this project, we choose the NASA Exoplanet Dataset, directly downloaded from the NASA Exoplanet Archive (<https://exoplanetarchive.ipac.caltech.edu/docs/data.html>).
+
+We downloaded the KOI Table (Cumulative List) dataset from the "Kepler" subsection in a .csv format. We imported the dataset into RStudio, with the "Import Dataset \> From Text (base)" option, renaming it "koi", and setting "Heading" to True.
+
+```{r loading-dataset, include=FALSE}
+# Loading the dataset from a CSV file
+koi <- read.csv(file = "~/koi.csv")
+koi.r <- read.csv(file = "~/koi_r.csv")
+
+# Displaying the first few rows of the dataset
+head(koi)
+```
+
+The dataset was gathered by the NASA's Kepler mission and contains information about various Kepler Objects of Interest (KOIs). A Kepler Object of Interest is a star that is suspected of hosting one or more transiting planets.
+
+It consists of 9564 observation, each one of them corresponding to a different KOI event, and contains 27 variables.
+
+It is used to detect exoplanets, to study their the physical and orbital characteristics, and to investigate the relationship between host stars and their planets.
+
+It is used to classify KOIs into categories such as confirmed planets, candidates, and false positive, or to predict the likelihood of a KOI event being caused by a true exoplanet, based on the characteristics of the observed transit signal event.
+
+It also helps in identifying planets that lie within the habitable zone of their stars, where conditions might be suitable for liquid water, and potentially life.
+
+Our statistical analyses focused on classifying KOIs, and predicting the *koi_score.*
+
+Let's continue with a brief description of all the variables included in our dataset.
+
+| Variable Names    | Descriptions                                                                                                                                                                                                                                                                                                                                                                  |
+|-------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| kepid             | The kepid is typically a numeric value with a specific format assigned by the Kepler mission. It serves as a unique identifier for each star observed by the Kepler space telescope.                                                                                                                                                                                          |
+| kepoi_name        | The kepoi_name variable serves as a unique identifier for each Kepler Object of Interest (KOI).                                                                                                                                                                                                                                                                               |
+| kepler_name       | The kepler_name variable provides the official name of a confirmed exoplanet discovered by the Kepler mission. This name is typically assigned once the planet's existence is confirmed through additional observations and analysis.                                                                                                                                         |
+| koi_disposition   | The koi_disposition variable indicates the final status or classification of each Kepler Object of Interest (KOI). It represents the outcome of the vetting process used to determine whether the observed signal is a true exoplanet, a candidate exoplanet, or a false positive.                                                                                            |
+| koi_pdisposition  | The koi_pdisposition variable represents the probable disposition or initial classification of a Kepler Object of Interest (KOI) based on preliminary analysis. It indicates whether the object is initially considered a candidate or a false positive before detailed follow-up observations and more rigorous vetting are completed.                                       |
+| koi_score         | The koi_score variable represents a quantitative measure of the likelihood that a Kepler Object of Interest (KOI) is a true exoplanet.                                                                                                                                                                                                                                        |
+| koi_fpflag_nt     | The koi_fpflag_nt variable is a binary flag that indicates whether the Kepler Object of Interest (KOI) was identified as a false positive due to not having a transit-like signal.                                                                                                                                                                                            |
+| koi_fpflag_ss     | The koi_fpflag_ss variable is a binary flag that indicates whether a Kepler Object of Interest (KOI) was identified as a false positive due to a signal resembling a stellar eclipse.                                                                                                                                                                                         |
+| koi_fpflag_co     | The koi_fpflag_co variable is a binary flag that indicates whether a Kepler Object of Interest (KOI) was identified as a false positive due to a centroid offset. This means that the observed signal's center of light does not align with the expected position of the star, suggesting that the signal might originate from a nearby star rather than the target star.     |
+| koi_fpflag_ec     | The koi_fpflag_ec variable is a binary flag that indicates whether a Kepler Object of Interest (KOI) was identified as a false positive due to an the observed transit signal that matches the timing of another known astrophysical event, suggesting the signal might be contamination from a nearby object rather than a true exoplanet.                                   |
+| koi_period        | The koi_period variable represents the orbital period of a Kepler Object of Interest (KOI), which is the time it takes for the potential exoplanet to complete one full orbit around its host star.                                                                                                                                                                           |
+| koi_time0bk       | The koi_time0bk variable represents the time of the first detected transit center for a Kepler Object of Interest (KOI). This is the point in time when the exoplanet is observed to cross the line of sight between its host star and the observer, resulting in a measurable dip in the star's brightness.                                                                  |
+| koi_impact        | The koi_impact variable represents the impact parameter of a Kepler Object of Interest (KOI), which is a measure of the distance between the center of the star and the center of the exoplanet's path across the star, normalized by the radius of the star. It indicates how centrally the planet transits the star.                                                        |
+| koi_duration      | The koi_duration variable represents the total duration of a single transit event for a Kepler Object of Interest (KOI). It measures the time from the beginning (ingress) to the end (egress) of the transit, when the planet passes in front of its host star and causes a dip in the star’s brightness.                                                                    |
+| koi_depth         | The koi_depth variable represents the depth of the transit, which is the amount by which the star's brightness decreases when the exoplanet passes in front of it. This depth is a measure of how much light is blocked by the planet and provides insights into the size of the planet relative to the star.                                                                 |
+| koi_prad          | The koi_prad variable represents the estimated radius of a Kepler Object of Interest (KOI), expressed in Earth radii.                                                                                                                                                                                                                                                         |
+| koi_teq           | The koi_teq variable represents the estimated equilibrium temperature of a Kepler Object of Interest (KOI), expressed in Kelvin (K). This temperature is calculated based on the planet's distance from its host star and the star's effective temperature.                                                                                                                   |
+| koi_insol         | The koi_insol variable represents the insolation flux received by a Kepler Object of Interest (KOI), expressed in units of Earth flux. Insolation flux is the amount of stellar energy received per unit area on the planet’s surface and is a crucial factor in determining the planet's climate and potential habitability.                                                 |
+| koi_model_snr     | The koi_model_snr variable represents the signal-to-noise ratio (SNR) of the detected transit signal for a Kepler Object of Interest (KOI). This metric quantifies the strength of the transit signal relative to the background noise in the observational data.                                                                                                             |
+| koi_tce_plnt_num  | The koi_tce_plnt_num variable indicates the sequence number of the detected planet candidate within a given Threshold Crossing Event (TCE). Each TCE can contain multiple planet candidates, and this variable specifies the order in which they were identified.                                                                                                             |
+| koi_tce_delivname | The koi_tce_delivname variable specifies the name of the data delivery for the Threshold Crossing Event (TCE) in which the KOI (Kepler Object of Interest) was identified. This name corresponds to a specific data release or version of the TCE data processing pipeline. Helps in tracking which version of the data and processing pipeline was used to identify the KOI. |
+| koi_steff         | The koi_steff variable represents the effective temperature of the host star of a Kepler Object of Interest (KOI), expressed in Kelvin (K). This temperature is a measure of the surface temperature of the star, assuming it radiates as a perfect blackbody.                                                                                                                |
+| koi_slogg         | The koi_slogg variable represents the logarithm of the surface gravity of the host star of a Kepler Object of Interest (KOI), expressed in cm/s². This measure is important for understanding the physical properties of the star, including its mass and radius.                                                                                                             |
+| koi_srad          | The koi_srad variable represents the radius of the host star of a Kepler Object of Interest (KOI), expressed in units of solar radii.                                                                                                                                                                                                                                         |
+| ra                | The ra variable represents the right ascension of the host star of a Kepler Object of Interest (KOI). Right ascension is one of the two coordinates used in the equatorial coordinate system to specify the position of celestial objects on the celestial sphere.                                                                                                            |
+| dec               | The dec variable represents the declination of the host star of a Kepler Object of Interest (KOI). Declination is one of the two coordinates used in the equatorial coordinate system to specify the position of celestial objects on the celestial sphere.                                                                                                                   |
+| koi_kepmag        | The koi_kepmag variable represents the Kepler magnitude of the host star of a Kepler Object of Interest (KOI). The Kepler magnitude is a measure of the star's brightness as observed by the Kepler space telescope.                                                                                                                                                          |
+
+: Brief description of the variables.
+
+```{r import, results='hide', error=FALSE, warning=FALSE,message=FALSE}
+# Importing the necessary libraries
+library(car)
+library(pROC)
+library(MASS)
+library(class)
+library(boot)
+library(leaps)
+library(glmnet)
+library(ISLR2)
+library(corrplot)
+```
+
+We started the cleaning process. We checked for duplicates in our dataset, and found out there were none.
+
+```{r duplicates-check}
+# Check for duplicates
+duplicates <- sum(duplicated(koi))
+duplicates
+```
+
+That means that every row corresponds to a different KOI.
+
+```{r duplicates-kepid}
+# Check for duplicates in the 'kepid' column
+duplicates_kepid <- sum(duplicated(koi$kepid))
+duplicates_kepid
+```
+
+But we have 1350 duplicates in *kepid*. That means that 1350 stars have at least 2 KOIs associated to them.
+
+```{r, out.width="50%", fig.align='center'}
+# Create a table of frequencies for kepid values
+kepid_table <- table(koi$kepid)
+
+# Plot the frequency of kepid values
+barplot(kepid_table,
+        main = "Frequency of kepid values",
+        xlab = "kepid",
+        ylab = "Frequency",
+        las = 2,  
+        cex.names = 0.6)
+```
+
+By plotting the frequencies of *kepid* values, we found out that stars have at least one KOI event associated to them, up to 7.
+
+```{r}
+# Count how many times each frequency occurs
+frequency_count <- table(kepid_table)
+
+# Print the frequency counts for 1 to 7 times
+for (i in 1:7) {
+  count <- ifelse(i %in% names(frequency_count), frequency_count[as.character(i)], 0)
+  print(paste("Number of kepid values present", i, "times:", count))
+}
+```
+
+```{r}
+# Count the number of unique values in the kepid column
+unique_kepid_count <- length(unique(koi$kepid))
+unique_kepid_count
+```
+
+This tells us that we have a total of 8214 stars in our dataset.
+
+```{r, out.width="50%", fig.align='center'}
+# Create a table of frequencies for koi_disposition values
+disposition_frequency <- table(koi$koi_disposition)
+
+# Plot the distribution of koi_disposition values using a bar plot
+barplot(disposition_frequency,
+        main = "Distribution of koi_disposition values",
+        xlab = "koi_disposition",
+        ylab = "Frequency",
+        col = c("lightblue", "aquamarine", "bisque"))
+```
+
+```{r}
+# Check for NA values in the dataset
+na_count <- sapply(koi, function(x) sum(is.na(x)))
+na_count
+```
+
+There should be no NA values in *kepler_name*, but by looking at the dataset we can see that there are missing values.
+
+```{r}
+# We substitute empty strings with NA values in kepler_name
+koi$kepler_name[koi$kepler_name == ""] <- NA
+na_count <- sapply(koi, function(x) sum(is.na(x)))
+na_count
+```
+
+Now we can see that we have actually 6819 NAs in *kepler_name*. We also checked for other variables, and found out that there were no other ghost NAs in the dataset.
+
+The majority of NAs are in *kepler_name*. That is to be expected, as KOIs only get named after they have been confirmed.
+
+```{r}
+# Count the number of CONFIRMED values in the koi_disposition column
+confirmed_count <- sum(koi$koi_disposition == "CONFIRMED")
+confirmed_count
+```
+
+We have 2743 confirmed KOIs: 9564 (total number of KOIs) - 6819 (KOIs without a name) = 2745. There are 2 KOIs, either candidate or false positive, that have a name.
+
+```{r}
+# Filter the rows where koi_disposition is either "CANDIDATE" or "FALSE POSITIVE"
+# and kepler_name is not NA
+filtered_koi <- subset(koi, (koi_disposition %in% c("CANDIDATE", "FALSE POSITIVE"))
+                       & !is.na(kepler_name))
+
+# Retrieve the kepler_name column for these rows
+kepler_names <- filtered_koi$kepler_name
+kepler_names
+```
+
+Looking at the dataset, we found that "Kepler-469 b" and "Kepler-503 b" are both FALSE POSITIVE.
+
+Let's continue with our data-cleaning. There are 1510 NAs in *koi_score*. We can see that some variables have more or less the same amount of NAs. A good idea would be to eliminate rows that present NAs in one variable, and then check if also other NAs disappear.
+
+```{r}
+# Remove rows with NA in the koi_impact column
+koi <- koi[!is.na(koi$koi_impact), ]
+
+na_count <- sapply(koi, function(x) sum(is.na(x)))
+na_count
+```
+
+We are left with 255 NAs in both *koi_tce_plnt_num* and *koi_tce_delivname*, and one NA in *koi_kepmag*.
+
+```{r}
+# Remove rows with NA in the koi_impact column
+koi <- koi[!is.na(koi$koi_kepmag), ]
+
+na_count <- sapply(koi, function(x) sum(is.na(x)))
+na_count
+```
+
+```{r}
+# Remove rows with NA in koi_score from the original dataset
+koi <- koi[!is.na(koi$koi_score), ]
+
+na_count <- sapply(koi, function(x) sum(is.na(x)))
+na_count
+```
+
+We are left with 5267 NAs in *kepler_name*, and a total of 7994 objects. There are no other NAs in the dataset.
+
+## EDA
+
+```{r, out.width="50%", fig.align='center'}
+# Create a table of frequencies for koi_pdisposition values
+pdisposition_frequency <- table(koi$koi_pdisposition)
+
+# Plot the distribution of koi pdisposition
+barplot(pdisposition_frequency,
+        main = "Distribution of koi pdisposition values",
+        xlab = "koi pdisposition",
+        ylab = "Frequency",
+        col = c("lightblue", "bisque"))
+```
+
+```{r, out.width="50%", fig.align='center'}
+## koi_score
+# Plot the distribution of koi_score
+hist(koi$koi_score,
+     main = "Distribution of koi_score",
+     xlab = "koi_score",
+     ylab = "Frequency",
+     col = "lightblue",  
+     breaks = 30)
+```
+
+We plotted every variable, using barplot for binary variables, boxplot to better visualize outliers, and histograms to visualize distributions. The plots are omitted for brevity, but can be found in the koi.R script, and in the report.Rmd file.
+
+By doing this, we also found an error in the dataset. In *koi_fpflag_nt* we have a value of 465, but *koi_fpflag_nt* is a binary variable. Since the *koi_disposition* is CONFIRMED, we know that the right value would have been 0.
+
+```{r}
+# Change the value 465 to 0 in the koi_fpflag_nt column
+koi$koi_fpflag_nt[koi$koi_fpflag_nt == 465] <- 0
+```
+
+```{r}
+# Removing variables that are not of interest
+koi$ra <- NULL
+koi$dec <- NULL
+koi$koi_tce_plnt_num <- NULL
+koi$koi_tce_delivname <- NULL
+koi$koi_time0bk <- NULL
+```
+
+```{r, include=FALSE}
+cov_matrix <- round(var(koi[,-1:-5]), 2)
+cov_matrix
+```
+
+```{r, out.width="70%", fig.align='center'}
+corr_matrix <- round(cor(koi[,-1:-5]), 3)
+corrplot(corr_matrix, method = 'circle', type = "upper",
+         tl.col = "black", cl.pos = "n")
+```
+
+We computed both the covariance and the correlation matrices, but omitted the covariance matrix for brevity. Then, we plotted the relationships between the variables that had higer correlation scores. We found out that, despite having high scores, the relationships are not exactly linear (for example, in the next plot the relationship is quadratic).
+
+```{r, out.width="50%", fig.align='center'}
+plot(koi$koi_slogg, koi$koi_srad, pch=20)
+```
+
+For the binary variables we used boxplots, to compare the distribution of *koi_score* between both groups, for each *fpflag* variable. In this way, we could visualize how different the medians and the distributions for the groups were. We could already see that for 0 groups, the median is set close to a *koi_score* of 1, but the boxes extend over the whole range of values of koi_score. For 0 groups, instead, the median is set to 0, and the boxes are compressed around the median. Later, we will be able to give an explanation to these characteristics of the groups divided by our binary variables.
+
+```{r, out.width="50%", fig.align='center'}
+par(mfrow=c(1,2))
+boxplot(koi_score ~ koi_fpflag_co, data = koi.r, col = "lightblue")
+
+boxplot(koi_score ~ koi_fpflag_nt, data = koi.r, col ="aquamarine")
+
+boxplot(koi_score ~ koi_fpflag_ss, data = koi.r, col = "bisque")
+
+boxplot(koi_score ~ koi_fpflag_ec, data = koi.r, col = "lightcoral")
+par(mfrow=c(1,1))
+```
+
+Then we went on to explore visually the relationships between our chosen response variable, and its regressor.
+
+```{r, out.width="50%", fig.align='center'}
+plot(koi.r$koi_score, koi.r$koi_period)
+```
+
+The *koi_period* values vary significantly, with many values concentrated near 0, and a few observations having very high periods (up to over 800 days). There does not appear to be a clear relationship between *koi_score* and *koi_period*. The distribution of *koi_period* values does not show any clear patterns, indicating that *koi_score* might not be strongly dependent on *koi_period*. That said, higher *koi_period* values seem to be associated with *koi_score* close to either 0 or 1.
+
+The graph also shows signs of heteroscedasticity, since the more dense-clustered points seem to form a double-cone shape in both directions, with the tips of the cones starting from the middle value of *koi_score.*
+
+Furthermore, there are some points that are far from the dense clusters, which might be outliers. In order to try to resolve these issues, and to prepare for the future regressions, we log-transformed and plotted the *koi_period* variable.
+
+```{r, out.width="50%", fig.align='center'}
+koi.r$log_koi_period <- log(koi.r$koi_period + 1)
+plot(koi.r$koi_score, koi.r$log_koi_period)
+```
+
+As we can see from the graph, the outliers problem is solved. Still, there seems to be no clear relationship between *koi_score* and *log(koi_period)*. Points are still densely clustered at both extremes of *koi_score* values. Also, there is no sign of the double-cone shape.
+
+The interpretation of the regression coefficients will change with transformations. In a linear-log model, the coefficients represent the estimated *unit change* in the dependent variable for a *percentage change* in the independent variable.
+
+Other transformations were plotted, both on *koi_score* and *koi_period*. We tried to plot the logit-transform of *koi_score* with base *koi_period*, the log-transform of *koi_score* with the log transform of *koi_period*, and the log-transform of *koi_score* with base *koi_period*. The differences in the plots are significant, and every transformation needs to be used carefully in regression contexts, since they have very different interpretations.
+
+```{r, out.width="50%", fig.align='center'}
+plot(koi.r$koi_score, koi.r$koi_duration)
+```
+
+Plotting the scatterplots of our response variable with the other independent variables, we saw that the distribution of the points followed similar patterns.
+
+It looks like higher values of the continuous indipendent variables are linked with extreme values of *koi_score*. If we think about it, it makes sense.
+
+All these variables provide us information about the quality of the transit signals. For example, a longer duration of the transit signal allows us to classify an event as either caused by an exoplanet, or by other misleading luminous signals.
+
+It is likely that there is a relationship between our variables and the ability to classify the event, as either a confirmed planet or a false positive, but it is not sure if the variables contain information on *how* to classify the event.
+
+In other words, better signals lead to better classifications of the events, but they do not tell us the direction of the classification.
+
+We will test if transformations are actually necessary when working on the regression part of the analysis.
+
+```{r, include=FALSE}
+# Transforming the variables for the regressions
+
+koi.r$log_koi_period <- log(koi.r$koi_period + 1)
+
+koi.r$log_koi_score <- log(koi.r$koi_score)
+
+koi.r$log_koi_impact <- log(koi.r$koi_impact + 1)
+
+koi.r$log_koi_duration <- log(koi.r$koi_duration + 1)
+
+koi.r$koi_depth_p <- koi.r$koi_depth / 1000
+
+koi.r$log_koi_depth_p <- log(koi.r$koi_depth_p + 1)
+
+koi.r$log_koi_prad <- log(koi.r$koi_prad + 1)
+
+koi.r$celsius_koi_teq <- (koi.r$koi_teq - 273.15)
+
+koi.r$log_celsius_koi_teq <- log(koi.r$celsius_koi_teq + 1)
+
+koi.r$log_koi_insol <- log(koi.r$koi_insol + 1)
+
+koi.r$log_koi_model_snr <- log(koi.r$koi_model_snr + 1)
+
+koi.r$celsius_koi_steff <- (koi.r$koi_steff - 273.15)
+
+koi.r$log_celsius_koi_steff <- log(koi.r$celsius_koi_steff + 1)
+
+koi.r$log_koi_srad <- log(koi.r$koi_srad + 1)
+```
+
+## Multiple Linear Regression
+
+We organized our dataset for regression.
+
+```{r}
+koi.r$kepid <- NULL
+koi.r$kepoi_name <- NULL
+koi.r$kepler_name <- NULL
+koi.r$koi_disposition <- NULL
+koi.r$koi_pdisposition <- NULL
+```
+
+We removed all the variables that do not carry relevant information for our regressions. For examples, we removed *ra* and *dec*, which are used to classify the transit event in space. We removed *koi_tce_plnt_num*, *koi_tce_delivname*, and *koi_time0bk,* which are used to classify the event in time. We also removed the name variables and the classification results variables.
+
+Furthermore, when processing the other variables, some have been transformed. Variables expressed in Kelvin have been converted to Celsius, and *koi_depth*, which is measured in parts per million (ppm), has been converted into a percentage. For example, a *koi_depth* of 5000 ppm means that the star's brightness decreases by 0.5% during the transit. By dividing the values by 1000 we obtained the values expressed in percentages.
+
+To start, we computed a multiple linear regression on *koi_score* using all the ex-ante selected variables.
+
+```{r}
+mlr.out <- lm(koi_score ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co
+              + koi_fpflag_ec + koi_period + koi_impact + koi_duration
+              + koi_depth + koi_prad + koi_teq + koi_insol
+              + koi_model_snr + koi_steff + koi_slogg + koi_srad
+              + koi_kepmag, data=koi.r)
+summary(mlr.out)
+```
+
+Worried about multicollinearity issues, we computed the VIF scores.
+
+```{r}
+vif_mlr.out <- vif(mlr.out)
+vif_mlr.out
+```
+
+```{r, out.width="70%", fig.align='center'}
+par(mfrow=c(1,2))
+
+# Residuals vs. Fitted Plot
+plot(mlr.out, which = 1)
+
+# Normal Q-Q Plot
+plot(mlr.out, which = 2)
+
+# Scale-Location Plot
+plot(mlr.out, which = 3)
+
+# Residuals vs. Leverage Plot
+plot(mlr.out, which = 5)
+
+par(mfrow=c(1,1))
+```
+
+For the *Residuals vs Fitted* plot, the residuals are not randomly scattered around zero. This indicates that the relationship between the predictors and the response variable might not be linear. Also, the varying spread of the residuals suggests heteroscedasticity. This means that the variance of the errors is not constant, which violates one of the assumptions of linear regression.
+
+For the *Normal Q-Q* plot, the points form an S-shaped curve, which indicates that the residuals are not normally distributed. There is a clear deviation from normality in both tails, and the middle part shows a pattern as well.
+
+For the *Scale-Location* plot, the red line shows an increasing trend with the fitted values. This confirms that the variance of the residuals is not constant, suggesting heteroscedasticity.
+
+For the *Residuals vs Leverage* plot, we can see that there are some points with both high leverage and large residuals.
+
+All VIF values were below 5, there was no immediate need to address multicollinearity, but in order to improve the diagnostic plots, we tried eliminating from our regression the variables with higher VIF scores.
+
+```{r}
+# Removing variables with VIF > 2.4 from the model
+mlr.out.R <- lm(koi_score ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co
+              + koi_fpflag_ec + koi_period + koi_impact + koi_duration
+              + koi_depth + koi_prad + koi_insol
+              + koi_model_snr + koi_steff
+              + koi_kepmag, data=koi.r)
+summary(mlr.out.R)
+```
+
+We compared the full and the reduced model using the ANOVA method.
+
+```{r}
+# ANOVA
+anova(mlr.out.R, mlr.out)
+```
+
+The RSS indicated that the excluded variables only slightly improved the fit of the model. At the same time, the extremely small p-value suggested we should not exclude the three variables from the model.
+
+```{r, out.width="70%", fig.align='center'}
+par(mfrow=c(1,2))
+
+# Residuals vs. Fitted Plot
+plot(mlr.out.R, which = 1)
+
+# Normal Q-Q Plot
+plot(mlr.out.R, which = 2)
+
+# Scale-Location Plot
+plot(mlr.out.R, which = 3)
+
+# Residuals vs. Leverage Plot
+plot(mlr.out.R, which = 5)
+
+par(mfrow=c(1,1))
+```
+
+Removing the 3 variables did not improve the plots. The problems are probably due to heteroscedasticity, and from the fact that the relationship between the variables and *koi_score* is not linear (and maybe, except for the binary variables, not present at all).
+
+We continued our analysis by testing two other models. The first one, *mlr.out.nb*, only takes continuous variables, and excludes the binary ones.
+
+```{r}
+mlr.out.nb <- lm(koi_score ~ koi_period + koi_impact + koi_duration
+              + koi_depth + koi_prad + koi_teq + koi_insol
+              + koi_model_snr + koi_steff + koi_slogg + koi_srad
+              + koi_kepmag, data=koi.r)
+summary(mlr.out.nb)
+```
+
+```{r}
+vif_mlr.out.nb <- vif(mlr.out.nb)
+vif_mlr.out.nb
+```
+
+```{r, out.width="70%", fig.align='center'}
+par(mfrow=c(1,2))
+
+# Residuals vs. Fitted Plot
+plot(mlr.out.nb, which = 1)
+
+# Normal Q-Q Plot
+plot(mlr.out.nb, which = 2)
+
+# Scale-Location Plot
+plot(mlr.out.nb, which = 3)
+
+# Residuals vs. Leverage Plot
+plot(mlr.out.nb, which = 5)
+
+par(mfrow=c(1,1))
+```
+
+The R-squared dropped to 0.3208, indicating a low to moderate fit. *Koi_steff* and *koi_srad* are not significant. Overall, the model is statistically significant, as indicated by the very low p-value.
+
+Then we tested our second model, *mlr.out.b*, which only takes the binary variables as regressors.
+
+```{r}
+mlr.out.b <- lm(koi_score ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co 
+                 + koi_fpflag_ec, data = koi.r)
+summary(mlr.out.b)
+```
+
+All four predictors are highly significant, indicating a strong negative relationship with *koi_score*. The model explains about 67.13% of the variance of *koi_score*, indicating a good fit. At this point, we are sure that most of the predictive abilities of our model is due to the four *fpflag* dummies.
+
+```{r, out.width="70%", fig.align='center'}
+par(mfrow=c(1,2))
+
+# Residuals vs. Fitted Plot
+plot(mlr.out.b, which = 1)
+
+# Normal Q-Q Plot
+plot(mlr.out.b, which = 2)
+
+# Scale-Location Plot
+plot(mlr.out.b, which = 3)
+
+# Residuals vs. Leverage Plot
+plot(mlr.out.b, which = 5)
+
+par(mfrow=c(1,1))
+```
+
+The diagnostic plots differ significantly from previous ones, displaying characteristics typical of diagnostic plots for regressions involving categorical variables. Yet again, we cannot confirm homoscedasticity, nor linear relationships between the response variable and the regressors.
+
+```{r}
+vif_mlr.out.b <- vif(mlr.out.b)
+vif_mlr.out.b
+```
+
+All the VIF values are between 1 and 2, indicating low to moderate multicollinearity. This was particularly important to test since *fpflag* variables are binary, and we had to make sure we were avoiding the dummy variables trap. What we can evaluate by looking at the dataset is that, when at least one variable is flagged, the *koi_score* drops to 0 or close, but more than one variable could be flagged.
+
+Also, if no variables are flagged, *koi_score* could still be very low or close to zero. In a sense, *fpflag* variables are not providing overlapping or complete information. They provide information about why a planet may have a low score, but they do not provide information about how to classify a planet that has not been flagged.
+
+```{r}
+# ANOVA
+anova(mlr.out.b, mlr.out)
+anova(mlr.out.nb, mlr.out)
+```
+
+The F-statistics and its corresponding p-values, for both models, are highly significant. That said, it is important to notice how the RSS for the binary-only model is only slightly higher than the full model.
+
+Then we tried to improve the fit by transforming the variables.
+
+```{r}
+# Linear-log
+mlr.linlog.out <- lm(koi_score ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co
+              + koi_fpflag_ec + log_koi_period + log_koi_impact + log_koi_duration
+              + log_koi_depth_p + log_koi_prad + log_celsius_koi_teq + log_koi_insol
+              + log_koi_model_snr + log_celsius_koi_steff + koi_slogg + log_koi_srad
+              + koi_kepmag, data=koi.r)
+summary(mlr.linlog.out)
+```
+
+```{r}
+# Log-log
+mlr.loglog.out <- lm(log(koi_score+0.1) ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co
+                  + koi_fpflag_ec + log_koi_period + log_koi_impact + log_koi_duration
+                  + log_koi_depth_p + log_koi_prad + log_celsius_koi_teq + log_koi_insol
+                  + log_koi_model_snr + log_celsius_koi_steff + koi_slogg + log_koi_srad
+                  + koi_kepmag, data=koi.r)
+summary(mlr.loglog.out)
+```
+
+The residual standard error is lower for the lin-log model, meaning predictions are closer to the observed values on average. At the same time, the R-squared is higher for the log-log model, meaning the model can explain more variance in the response variable.
+
+In order to decide which model was the best, we plotted diagnostic plots.
+
+We found out that the graphs were completely equivalent. Also, there is no improvement from the graph plotted before the log-transforms on the full model. We only solved the outliers/high-leverage points problem, and that probably explains the slightly better fit of the models.
+
+We tried to fit a multiple linear regression on a complex dataset. The relationship between the variables and our *koi_score* are complicated, and a linear model can not explain it fully. Even though our final R-squared was good enough (around 0.75), most of the dipendent variable is explained by the 4 *fpflag* binary variables. This means that the rest of the variables do not provide us with much significant information about the response variable.
+
+To conclude the section on the multiple linear regression, we tested other methods to find
+
+## Best Subset Selection
+
+The regsubsets function performs best subset selection by identifying the best model that contains a given number of predictors, where best is quantified using RSS.
+
+```{r}
+regfit.full <- regsubsets(koi_score ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co + koi_fpflag_ec + 
+                            koi_period + koi_impact + koi_duration + koi_depth + koi_prad + koi_teq + 
+                            koi_insol + koi_model_snr + koi_steff + koi_slogg + koi_srad + koi_kepmag,
+                            data=koi.r, nvmax=16)
+
+reg.summary <- summary(regfit.full)
+reg.summary$outmat
+
+names(reg.summary)
+reg.summary$rsq
+reg.summary$bic
+```
+
+```{r, out.width="70%", fig.align='center'}
+par(mfrow=c(1,2))
+
+# residual sum of squares
+plot(reg.summary$rss,xlab="Number of Variables",ylab="RSS",type="l")
+
+# adjusted-R^2 with its largest value
+plot(reg.summary$adjr2,xlab="Number of Variables",ylab="Adjusted Rsq",type="l")
+i <- which.max(reg.summary$adjr2)
+points(i,reg.summary$adjr2[i], col="red",cex=2,pch=20)
+text(i,reg.summary$adjr2[i], i, pos=1)
+
+# Mallow's Cp with its smallest value
+plot(reg.summary$cp,xlab="Number of Variables",ylab="Cp",type='l')
+i <- which.min(reg.summary$cp)
+points(i,reg.summary$cp[i],col="red",cex=2,pch=20)
+text(i,reg.summary$cp[i], i, pos=3)
+
+# BIC with its smallest value
+plot(reg.summary$bic,xlab="Number of Variables",ylab="BIC",type='l')
+i <- which.min(reg.summary$bic)
+points(i,reg.summary$bic[i],col="red",cex=2,pch=20)
+text(i,reg.summary$bic[i], i, pos=3)
+
+par(mfrow=c(1,1))
+```
+
+The best model, according to BIC scores, is the one with 13 predictors.
+
+```{r}
+# Check how R-squared changes
+reg.summary$rsq
+```
+
+This model, just like previous multiple linear models, shows the same problems from the diagnostic plots.
+
+We tried to solve with complex transformations of both the response variable and the predictors, using polynomial terms, interaction terms, log-transform and logit-transform (of the response variable, since it is a probability). None of the transformations proved useful. Some of the tests can be found in the koi.R script.
+
+## Forward Inclusion
+
+The best model contains the same 13 predictors found using the best subset selection method, using the BIC score.
+
+## Backward Elimination
+
+Same as before, we found exactly the same model of the two previous approaches.
+
+## K-Fold Cross Validation
+
+```{r}
+# Set a value for k (number of folds)
+k <- 10
+
+# Associate a fold number to each observation
+set.seed(42)
+
+folds <- sample(1:k, nrow(koi.r), replace = TRUE)
+folds[1:20]
+table(folds)
+
+# For each of the k=10 folds we are going to compute p=16 validation errors
+# (since we have 16 predictors) and thus we need a 10x16 matrix
+cv.errors <- matrix(NA, k, 16)
+colnames(cv.errors) <- 1:16
+```
+
+```{r}
+# Apply the validation set approach k times, one for each fold
+for (j in 1:k) {
+  best.fit <- regsubsets(koi_score ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co + koi_fpflag_ec + 
+                           koi_period + koi_impact + koi_duration + koi_depth + koi_prad + koi_teq + 
+                           koi_insol + koi_model_snr + koi_steff + koi_slogg + koi_srad + koi_kepmag,
+                         data = koi.r[folds != j,], nvmax = 16)
+  test.mat <- model.matrix(koi_score ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co + koi_fpflag_ec + 
+                             koi_period + koi_impact + koi_duration + koi_depth + koi_prad + koi_teq + 
+                             koi_insol + koi_model_snr + koi_steff + koi_slogg + koi_srad + koi_kepmag,
+                           data = koi.r[folds == j,])
+  for (i in 1:16) {
+    beta <- coef(best.fit, id = i)
+    pred <- test.mat[, names(beta)] %*% beta
+    cv.errors[j, i] <- mean((koi.r$koi_score[folds == j] - pred)^2)
+  }
+}
+```
+
+```{r, out.width="50%", fig.align='center'}
+# Compute the mean of CV errors across the k folds
+mean.cv.errors <- apply(cv.errors, 2, mean)
+mean.cv.errors
+
+# Plot the mean CV errors
+plot(mean.cv.errors, type = 'b', xlab = 'Number of Predictors', ylab = 'CV Error')
+i <- which.min(mean.cv.errors)
+points(i, mean.cv.errors[i], col = "red", cex = 2, pch = 20)
+```
+
+```{r}
+# Fit the selected model on the full dataset
+reg.best <- regsubsets(koi_score ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co + koi_fpflag_ec + 
+                         koi_period + koi_impact + koi_duration + koi_depth + koi_prad + koi_teq + 
+                         koi_insol + koi_model_snr + koi_steff + koi_slogg + koi_srad + koi_kepmag,
+                       data = koi.r, nvmax = 16)
+coef(reg.best, i)
+```
+
+With the K-fold Cross Validation method, we found 11 predictors for the best model.
+
+## Logistic Regression
+
+```{r}
+# To check how certain it is to classify a signal as either a planet or a false positive
+koi.r$is_classifiable <- ifelse(koi.r$koi_score < 0.25 | koi.r$koi_score > 0.75, 1, 0)
+
+# To classify a signal as a planet or a false positive based on koi_score
+koi.r$is_planet <- ifelse(koi.r$koi_score > 0.5, 1, 0)
+
+# To classify a signal as a planet or not based on koi_disposition
+koi.r$confirmed <- ifelse(koi$koi_disposition == "CONFIRMED", 1, 0)
+```
+
+To proceed with logistic regression, we thought about three possible response variables. Our results made us think that our regressors are not strictly linked with *koi_score*, making it hard to predict/classify whether a signal represents a planet, or is a false positive. For middle values of *koi_score*, our scatterplots show how the data is dispersed (seemingly) randomly, but for extreme values of *koi_score*, there seems to be some relation.
+
+This is why we thought about classifying for easy/difficult classification, as a tool to indicate which planets might be smarter to focus on for further analysis, assuming other data will be available for the actual classification. But our logistic regression on *is_classifiable* gave us a neglectable reduction in the residual deviance from the null model.
+
+Surprisingly this did not happen with *is_planet*, which gave us a consistent improvement in reducing the deviance.
+
+But this variable was imprecise, as it is common in our dataset to have candidates or false positives for *koi_score* \> 0.5.
+
+That is why we used *koi_disposition* to create the final response variable. Also, the *glm* gave us a warning message (*glm.fit: fitted probabilities numerically 0 or 1 occurred*), meaning we have complete or quasi-complete separation, that is, when some of the predictor variables perfectly separate the response variable into 0s and 1s. Also the AIC is larger than it is on *is_planet*. We choose to continue with this model, as it poses for improvements using regularization techniques.
+
+```{r}
+confirmed.out <- glm(confirmed ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co
+                     + koi_fpflag_ec + koi_period + koi_impact + koi_duration
+                     + koi_depth + koi_prad + koi_teq + koi_insol
+                     + koi_model_snr + koi_steff + koi_slogg + koi_srad
+                     + koi_kepmag, family = binomial, data=koi.r)
+summary(confirmed.out)
+```
+
+```{r}
+# Obtain the estimated probabilities 
+logistic.prob <- predict(confirmed.out, type="response")
+
+# Assign probabilities > 0.5 to the class 1
+logistic.pred <- rep(0, 7994)
+logistic.pred[logistic.prob > 0.6] <- 1
+
+conf.matrix <- table(logistic.pred, koi.r$confirmed)
+dimnames(conf.matrix) <- list("Predictions" = c(0, 1), "Confirmed" = c(0, 1))
+conf.matrix
+```
+
+```{r, include=FALSE}
+# Function to compute performance measures
+#
+# Arguments:
+#
+# pred.values = vector of predicted values
+# true.values = vector of true values
+# lab.pos     = label of the positive class
+#
+perf.measure <- function(true.values, pred.values,  lab.pos = 1){
+  #
+  # compute the confusion matrix and number of units
+  conf.matrix <- table(pred.values, true.values)
+  n <- sum(conf.matrix)
+  #
+  # force the label of positives to be a character string
+  lab.pos <- as.character(lab.pos)
+  #
+  # obtain the label of negatives
+  lab <- rownames(conf.matrix)
+  lab.neg <- lab[lab != lab.pos]
+  #
+  # extract relevant quantities from the confusion matrix
+  TP <- conf.matrix[lab.pos, lab.pos]
+  TN <- conf.matrix[lab.neg, lab.neg]
+  FP <- conf.matrix[lab.pos, lab.neg]
+  FN <- conf.matrix[lab.neg, lab.pos]
+  P     <- TP + FN
+  N     <- FP + TN
+  P.ast <- TP + FP
+  #
+  # compute the performance measures
+  OER <- (FP+FN)/n
+  PPV <- TP/P.ast
+  TPR <- TP/P
+  F1  <- 2*PPV*TPR/(PPV+TPR)
+  TNR <- TN/N
+  FPR <- FP/N
+  return(list(Overall.Error.Rate = OER, Precision=PPV, Recall=TPR, F1=F1, Specificity=TNR, False.Positive.Rate=FPR))
+}
+```
+
+```{r}
+# Computing performance measures
+PM <- perf.measure(koi.r$confirmed, logistic.pred,  lab.pos = 1)
+PM
+```
+
+We compared the 0.5, 0.66, and 0.6 threshold. While the 0.5 threshold gave us higer Recall and F1 scores, the 0.66 threshold maximizes Precision and Specificity while minimizing False Positives. The 0.6 threshold offers a balanced middle-ground between the two previous threshold.
+
+```{r, out.width="50%", fig.align='center'}
+# ROC curve 
+roc.out <- roc(koi.r$confirmed, logistic.prob, levels=c(0, 1))
+
+plot(roc.out, print.auc=TRUE)
+```
+
+```{r}
+# Threshold that maximizes the sum of Specificity and Sensitivity
+coords(roc.out, "best")
+
+# threshold = "best"
+best.th <- coords(roc.out, "best")$threshold
+logistic.pred.best <- rep(0, 7994)
+logistic.pred.best[logistic.prob>best.th] <- 1
+
+
+confusion.matrix.best <- table(logistic.pred.best, koi.r$confirmed)
+dimnames(confusion.matrix.best) <- list("Predictions" = c(0, 1), "Confirmed" = c(0, 1))
+confusion.matrix.best
+```
+
+The best threshold (0.4417261) is more prone to Type I errors, while greatly reducing Type II errors.
+
+```{r}
+PM.best <- perf.measure(koi.r$confirmed, logistic.pred.best,  lab.pos = 1)
+PM.best
+```
+
+## Constraint-based backward elimination
+
+```{r}
+# Selection of predictors
+confirmed.out.F <- glm(confirmed ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co
+                     + koi_fpflag_ec + koi_period + koi_impact + koi_duration
+                     + koi_depth + koi_prad + koi_teq + koi_insol
+                     + koi_model_snr + koi_steff + koi_slogg + koi_srad
+                     + koi_kepmag, family = binomial, data=koi.r)
+summary(confirmed.out.F)
+
+# step 1
+confirmed.out.1 <- update(confirmed.out.F, .~.-koi_insol)
+summary(confirmed.out.1)
+
+anova(confirmed.out.1, confirmed.out.F, test="Chisq")
+
+# step 2
+
+confirmed.out.2 <- update(confirmed.out.1, .~.-koi_slogg)
+summary(confirmed.out.2)
+
+anova(confirmed.out.2, confirmed.out.F, test="Chisq")
+
+# step 3
+
+confirmed.out.3 <- update(confirmed.out.2, .~.-koi_impact)
+summary(confirmed.out.3)
+
+anova(confirmed.out.3, confirmed.out.F, test="Chisq")
+
+# step 4
+
+confirmed.out.4 <- update(confirmed.out.3, .~.-koi_duration)
+summary(confirmed.out.4)
+
+anova(confirmed.out.4, confirmed.out.F, test="Chisq")
+
+# step 5
+
+confirmed.out.5 <- update(confirmed.out.4, .~.-koi_srad)
+summary(confirmed.out.5)
+
+anova(confirmed.out.5, confirmed.out.F, test="Chisq")
+
+# step 6
+
+confirmed.out.6 <- update(confirmed.out.5, .~.-koi_fpflag_ec)
+summary(confirmed.out.6)
+
+anova(confirmed.out.6, confirmed.out.F, test="Chisq")
+
+# step 7
+
+confirmed.out.7 <- update(confirmed.out.6, .~.-koi_fpflag_co)
+summary(confirmed.out.7)
+
+anova(confirmed.out.7, confirmed.out.F, test="Chisq")
+```
+
+We removed variables based on their significance. Until model 5, we were able to remove variables without increasing much the residual deviance, we went from 4898.6 to 4907.8.
+
+With model 6 we got to 5076.1. With model 7 to 6112.6. Even though we were removing variables, the AIC got bigger, especially with models 6 and 7.
+
+The anova F-statistic was always indicating that the reduction in deviance was highly statistically significant, starting from model 1. We were also not able to resolve the warning message "fitted probabilities numerically 0 or 1 occurred".
+
+Choosing only on the differences in residual deviances, the best model is the sixth one.
+
+## Training and Validation Set method
+
+We decided to test our model selected with the constraint-based backward elimination on unseen data.
+
+```{r}
+set.seed(42)
+
+# 70% train set and 30% validation set
+train_size <- floor(0.7 * nrow(koi.r))
+
+train_indices <- sample(seq_len(nrow(koi.r)), size = train_size)
+
+# Split the data into training and validation sets
+train_set <- koi.r[train_indices, ]
+validation_set <- koi.r[-train_indices, ]
+```
+
+```{r}
+# Classification with previously selected model
+confirmed.out.train <- glm(confirmed ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co
+                       + koi_period + koi_depth + koi_prad + koi_teq + koi_model_snr 
+                       + koi_steff
+                       + koi_kepmag, family = binomial, data=train_set)
+
+trainval.prob <- predict(confirmed.out.train, validation_set, type="response")
+
+# probability chosen with coords(roc.out, "best")
+trainval.pred <- (trainval.prob > 0.47) + 0
+```
+
+```{r}
+# Confusion matrix
+conf.matrix.trainval<- table(validation_set$confirmed, trainval.pred)
+dimnames(conf.matrix.trainval) <- list("Predictions" = c(0, 1), "Confirmed" = c(0, 1))
+conf.matrix.trainval
+```
+
+```{r}
+# Performance measures
+perf.measure(validation_set$confirmed, trainval.pred)
+```
+
+```{r, out.width="50%", fig.align='center'}
+# ROC curve
+roc.out <- roc(validation_set$confirmed, trainval.prob)
+plot(roc.out, print.auc=TRUE, legacy.axes=TRUE, xlab="False positive rate", ylab="True positive rate")
+```
+
+Our chosen model performs well also on the validation set, with an AUC of 0.920. It is less precise on unseen data, but recall improved.
+
+## LDA
+
+LDA works based on two assumptions: it assumes that the predictor variables are drawn from a multivariate Gaussian distribution, and equality of covariances among the predictor variables across each levels of the response variable. Both assumptions are not respected in our dataset.
+
+To try and improve the classification of LDA, we removed the binary variables from the fitted model.
+
+```{r}
+lda.fit <- lda(confirmed ~ koi_period + koi_impact + koi_duration
+               + koi_depth + koi_prad + koi_teq + koi_insol
+               + koi_model_snr + koi_steff + koi_slogg + koi_srad
+               + koi_kepmag, data=train_set)
+lda.fit
+```
+
+```{r, out.width="50%", fig.align='center'}
+plot(lda.fit)
+```
+
+The LDA plot shows the distribution of the linear discriminant function scores for the two groups. A clear separation between the distributions of the classes suggests that LDA is effectively distinguishing and accurately classifying the groups, but this is not the case from our plot.
+
+```{r}
+# Predicting on the validation set
+lda.pred <- predict(lda.fit, validation_set)
+```
+
+```{r}
+lda.pred$posterior[10:20,] # we check the probabilities for an observation to be part of each class
+lda.pred$class[10:20] # we check the actual predictions
+```
+
+```{r}
+lda.class <- rep(0, 2399) # initializing the vectors of 0s
+lda.class[lda.pred$posterior[,2]>= 0.5] <- 1
+
+perf.measure(validation_set$confirmed, lda.pred$class, lab.pos = 1)
+```
+
+As anticipated, the LDA method is not able to accurately classify the data into their respective categories.
+
+## QDA
+
+QDA relaxes the assumption that covariates have the same variance in every class, but it still requires that each class is drawn from a normal distribution.
+
+```{r}
+qda.fit <- qda(confirmed ~ koi_period + koi_impact + koi_duration
+               + koi_depth + koi_prad + koi_teq + koi_insol
+               + koi_model_snr + koi_steff + koi_slogg + koi_srad
+               + koi_kepmag, data=train_set)
+qda.fit
+```
+
+```{r}
+qda.class <- predict(qda.fit, validation_set)$class
+table(qda.class, validation_set$confirmed)
+
+perf.measure(validation_set$confirmed, qda.class, lab.pos = 1)
+```
+
+The recall is very high, but the classifier underperforms across all other performance metrics.
+
+## K-Nearest Neighbours (KNN)
+
+```{r}
+set.seed(42)  
+n <- nrow(koi.r)
+validation_indices <- sample(1:n, size = 0.2 * n)  # 20% validation set
+train_indices <- setdiff(1:n, validation_indices)  # remaining 80% training set
+
+train_set <- koi.r[train_indices, ]
+validation_set <- koi.r[validation_indices, ]
+
+
+# Prepare the data for k-NN
+train.X <- as.matrix(train_set[, c("koi_fpflag_nt", "koi_fpflag_ss", "koi_fpflag_co", 
+                                   "koi_fpflag_ec", "koi_period", "koi_impact", 
+                                   "koi_duration", "koi_depth", "koi_prad", 
+                                   "koi_teq", "koi_insol", "koi_model_snr", 
+                                   "koi_steff", "koi_slogg", "koi_srad", 
+                                   "koi_kepmag")])
+validation.X <- as.matrix(validation_set[, c("koi_fpflag_nt", "koi_fpflag_ss", "koi_fpflag_co", 
+                                             "koi_fpflag_ec", "koi_period", "koi_impact", 
+                                             "koi_duration", "koi_depth", "koi_prad", 
+                                             "koi_teq", "koi_insol", "koi_model_snr", 
+                                             "koi_steff", "koi_slogg", "koi_srad", 
+                                             "koi_kepmag")])
+train.confirmed <- train_set$confirmed
+validation.confirmed <- validation_set$confirmed
+```
+
+```{r}
+
+# k-NN with k = 1
+knn.pred <- knn(train.X, validation.X, train.confirmed, k = 1)
+conf.matrix <- table(knn.pred, validation.confirmed)
+conf.matrix
+
+perf.measure(validation.confirmed, knn.pred, lab.pos = 1)
+
+# k-NN with k = 3
+
+knn.pred <- knn(train.X, validation.X, train.confirmed, k = 3)
+conf.matrix <- table(knn.pred, validation.confirmed)
+conf.matrix
+
+perf.measure(validation.confirmed, knn.pred, lab.pos = 1)
+
+# k-NN with k = 11
+
+knn.pred <- knn(train.X, validation.X, train.confirmed, k = 11)
+conf.matrix <- table(knn.pred, validation.confirmed)
+conf.matrix
+
+perf.measure(validation.confirmed, knn.pred, lab.pos = 1)
+
+# k-NN with k = 51
+
+knn.pred <- knn(train.X, validation.X, train.confirmed, k = 51)
+conf.matrix <- table(knn.pred, validation.confirmed)
+conf.matrix
+
+perf.measure(validation.confirmed, knn.pred, lab.pos = 1)
+
+# k-NN with k = 71
+
+knn.pred <- knn(train.X, validation.X, train.confirmed, k = 71)
+conf.matrix <- table(knn.pred, validation.confirmed)
+conf.matrix
+
+perf.measure(validation.confirmed, knn.pred, lab.pos = 1)
+```
+
+We saw that K higher than 71 did not improve the overall error rate significantly, and we stopped testing for higher values. We choose odd values for k to avoid ties, as we have a binary classification problem.
+
+Also K-NN underperforms. Since the algorithm is relatively simple, when used on lots of data, combined with many predictors, it causes underfitting.
+
+## Ridge and Lasso Regression
+
+Ridge and Lasso are regularization techniques used in regression models to prevent overfitting by adding a penalty to the model's coefficients. They are particularly useful when dealing with datasets that have a large number of features or multicollinearity.
+
+While Ridge shrinks the coefficients towards zero, but not exactly to zero, Lasso can shrink some coefficients exactly to zero, effectively performing feature selection.
+
+Lasso technique could be more suited for our dataset, since the coefficients resulted to be already close to zero with previous regression techniques, and we have a lot of regressors.
+
+```{r}
+confirmed.out <- glm(confirmed ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co
+                     + koi_fpflag_ec + koi_period + koi_impact + koi_duration
+                     + koi_depth + koi_prad + koi_teq + koi_insol
+                     + koi_model_snr + koi_steff + koi_slogg + koi_srad
+                     + koi_kepmag, family = binomial, data=koi.r)
+summary(confirmed.out)
+```
+
+```{r}
+
+# Prepare the data
+# Create the design matrix and response vector
+X <- model.matrix(confirmed ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co + koi_fpflag_ec + 
+                    koi_period + koi_impact + koi_duration + koi_depth + koi_prad + koi_teq + 
+                    koi_insol + koi_model_snr + koi_steff + koi_slogg + koi_srad + koi_kepmag,
+                  data = koi.r)[,-1]
+y <- koi.r$confirmed
+
+# Split data into training and test sets
+set.seed(42)
+train <- sample(1:nrow(X), nrow(X) / 2)
+test <- setdiff(1:nrow(X), train)
+
+# Define the grid of lambda values
+grid <- 10^seq(10, -2, length = 100)
+```
+
+```{r, out.width="50%", fig.align='center'}
+# Ridge Regression
+
+# Fit ridge regression model on training set
+ridge.mod <- glmnet(X[train, ], y[train], alpha = 0, lambda = grid, family = "binomial")
+
+# Plot the ridge regression coefficients
+plot(ridge.mod, xvar = "lambda", label = TRUE)
+
+# Perform cross-validation to choose the best lambda
+set.seed(42)
+cv.out <- cv.glmnet(X[train, ], y[train], alpha = 0, lambda = grid, nfolds = 10, family = "binomial")
+plot(cv.out)
+
+# Identify the best lambda
+bestlam.ridge <- cv.out$lambda.min
+bestlam.ridge
+
+# Predict on the test set using the best lambda
+ridge.pred <- predict(ridge.mod, s = bestlam.ridge, newx = X[test, ], type = "response")
+
+# Calculate the test MSE
+ridge.mse <- mean((ridge.pred - y[test])^2)
+ridge.mse
+
+# Fit the final model on the full dataset
+ridge.final <- glmnet(X, y, alpha = 0, lambda = grid, family = "binomial")
+coef(ridge.final, s = bestlam.ridge)
+```
+
+```{r, out.width="50%", fig.align='center'}
+# Lasso Regression
+
+# Fit lasso regression model on training set
+lasso.mod <- glmnet(X[train, ], y[train], alpha = 1, lambda = grid, family = "binomial")
+
+# Plot the lasso regression coefficients
+plot(lasso.mod, xvar = "lambda", label = TRUE)
+
+# Perform cross-validation to choose the best lambda
+set.seed(42)
+cv.out.lasso <- cv.glmnet(X[train, ], y[train], alpha = 1, lambda = grid, nfolds = 10, family = "binomial")
+plot(cv.out.lasso)
+
+# Identify the best lambda
+bestlam.lasso <- cv.out.lasso$lambda.min
+bestlam.lasso
+
+# Predict on the test set using the best lambda
+lasso.pred <- predict(lasso.mod, s = bestlam.lasso, newx = X[test, ], type = "response")
+
+# Calculate the test MSE
+lasso.mse <- mean((lasso.pred - y[test])^2)
+lasso.mse
+
+# Fit the final model on the full dataset
+lasso.final <- glmnet(X, y, alpha = 1, lambda = grid, family = "binomial")
+coef(lasso.final, s = bestlam.lasso)
+
+# Compare test MSE of ridge and lasso
+ridge.mse
+lasso.mse
+```
+
+Comparing both regularization techinques by their MSE, we can say that both regularization techniques proved to perform equivalently on our dataset, but Lasso might be preferred in order to obtain a leaner model.
+
+## Conclusions
+
+We tested multiple linear regression models to predict *koi_score*, but despite transformations and model adjustments, the linear models struggled to fully capture the complexity of the relationships between the regressors and the response variable. We achieved fairly good fits primarily due to the inclusion of the four binary variables.
+
+To better predict *koi_score*, non-linear regression models could be tested, and additionally, incorporating domain-specific knowledge for further feature engineering could enhance the model's performance and interpretability.
+
+Our classification on *confirmed* gave us satisfying results. The base logistic regression, and its subsets obtained by constraint-based backward elimination, performed well on most performance metrics, also when tested on the validation set.
+
+Ridge and Lasso techniques performed well, obtaining relatively small MSEs.
+
+LDA and QDA were not able to classify the samples accurately, probably because their base assumptions were not respected in this dataset. KNN also performed poorly, given it is a relatively simple algorithm and does not capture well the complexity of the dataset.
