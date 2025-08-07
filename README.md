@@ -137,9 +137,7 @@ library(corrplot)   # Correlation visualization
 
 - **Non-linear models**: Tree-based methods, neural networks, or GAMs
 - **Feature engineering**: Domain-specific transformations and interactions
-- **Ensemble methods**: Combining multiple model predictions
-- **Deep learning**: For capturing complex non-linear patterns
-- **Domain expertise**: Incorporating astrophysics knowledge for better feature selection
+
 
 ## Authors
 
